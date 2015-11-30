@@ -64,8 +64,8 @@ FIVES.Plugins = FIVES.Plugins || {};
 
     a._getHitpointWithGround = function(entity) {
         var rayOrigin = getCollisionRayOrigin(entity);
-        var ray = new XML3DRay(rayOrigin, new XML3DVec3(0,-1,0));
-        var outHitpoint = new XML3DVec3(0,0,0);
+        var ray = new XML3DRay(rayOrigin, new XML3D.Vec3(0,-1,0));
+        var outHitpoint = new XML3D.Vec3(0,0,0);
         _xml3dElement.getElementByRay(ray, outHitpoint);
         return outHitpoint;
     };
@@ -79,8 +79,8 @@ FIVES.Plugins = FIVES.Plugins || {};
         if(outHitpoint.x && !isNaN(outHitpoint.x)
             && outHitpoint.z && !isNaN(outHitpoint.z))
         {
-            var entityPositionInPlane = new XML3DVec3(entity.location.position.x, 0, entity.location.position.z);
-            var hitpointInPlane = new XML3DVec3(outHitpoint.x, 0, outHitpoint.z);
+            var entityPositionInPlane = new XML3D.Vec3(entity.location.position.x, 0, entity.location.position.z);
+            var hitpointInPlane = new XML3D.Vec3(outHitpoint.x, 0, outHitpoint.z);
             if(entityPositionInPlane.subtract(hitpointInPlane).length() < 2.5)
             {
                 FIVES.Plugins.Avatar.setAvatarForwardBackwardMotion(0);
@@ -91,29 +91,29 @@ FIVES.Plugins = FIVES.Plugins || {};
     a._getHitpointInMovementDirection = function(entity) {
         var rayOrigin = getCollisionRayOrigin(entity, "forward");
         var view = $(_xml3dElement.activeView)[0];
-        var entityDirection = entity.xml3dView.transformElement.rotation.rotateVec3(new XML3DVec3(1,0,0));
+        var entityDirection = entity.xml3dView.transformElement.rotation.rotateVec3(new XML3D.Vec3(1,0,0));
         if(entity.motion.velocity.x < 0)
             entityDirection = entityDirection.negate();
 
         var ray = new XML3DRay(rayOrigin, entityDirection);
 
-        var outHitpoint = new XML3DVec3(0,0,0);
+        var outHitpoint = new XML3D.Vec3(0,0,0);
         _xml3dElement.getElementByRay(ray, outHitpoint);
         return outHitpoint;
     };
 
     var getCollisionRayOrigin = function(entity, collisionDirection) {
-        var boundingBox = entity.xml3dView.groupElement.getBoundingBox();
+        var boundingBox = entity.xml3dView.groupElement.getWorldBoundingBox();
         var center = boundingBox.center();
         var view = $(_xml3dElement.activeView)[0];
         var viewDirection = view.getDirection();
         var rayOrigin;
         if(collisionDirection == "forward")
-            rayOrigin = new XML3DVec3(center.x + viewDirection.x * 0.5,
+            rayOrigin = new XML3D.Vec3(center.x + viewDirection.x * 0.5,
                 boundingBox.center().y,
                 center.z + viewDirection.z * 0.5);
         else
-            rayOrigin = new XML3DVec3(center.x + viewDirection.x * 0.5,
+            rayOrigin = new XML3D.Vec3(center.x + viewDirection.x * 0.5,
                 boundingBox.max.y,
                 center.z + viewDirection.z * 0.5);
 

@@ -62,7 +62,7 @@ FIVES.Creation = FIVES.Creation || {};
         var rotW = _getValidFloatFieldValue("input-orientation-w");
 
         var orientation = new XML3DRotation();
-        orientation.setAxisAngle(new XML3DVec3(parseFloat(rotX), parseFloat(rotY), parseFloat(rotZ)), parseFloat(rotW));
+        orientation.setAxisAngle(new XML3D.Vec3(parseFloat(rotX), parseFloat(rotY), parseFloat(rotZ)), parseFloat(rotW));
 
         var quat = orientation.getQuaternion();
         return {x: quat[0], y: quat[1], z: quat[2], w: quat [3]};

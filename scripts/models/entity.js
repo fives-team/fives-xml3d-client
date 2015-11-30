@@ -69,7 +69,7 @@ FIVES.Models = FIVES.Models || {};
 
     e.getDirection = function() {
         var entityTransformation = this.getTransformElement();
-        var xAxis = new XML3DVec3(-1,0,0); /* we apply inversve transform */
+        var xAxis = new XML3D.Vec3(-1,0,0); /* we apply inversve transform */
         return entityTransformation.rotation.rotateVec3(xAxis);
     };
 

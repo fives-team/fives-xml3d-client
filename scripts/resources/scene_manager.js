@@ -68,30 +68,29 @@ FIVES.Resources = FIVES.Resources || {};
     scm._createTransformForEntityGroup = function(entity) {
         var transformTag = XML3D.createElement("transform");
         transformTag.setAttribute("id", "transform-" + entity.guid) ;
-        transformTag.translation.set(this._createTranslationForEntityGroup(entity));
-        transformTag.rotation.set(this._createRotationFromOrientation(entity));
-        transformTag.scale.set(this._createScaleForEntityGroup(entity));
+        transformTag.translation = this._createTranslationForEntityGroup(entity);
+        transformTag.rotation = this._createRotationFromOrientation(entity);
+        transformTag.scale = this._createScaleForEntityGroup(entity);
         _mainDefs.appendChild(transformTag);
         return transformTag;
     };
 
     scm._createTranslationForEntityGroup = function(entity) {
         var position = entity.location.position;
-        var xml3dPosition = new XML3DVec3(position.x, position.y, position.z);
-        return xml3dPosition;
+        var xml3dPosition = new XML3D.Vec3(position.x, position.y, position.z);
+        return xml3dPosition.toDOMString();
     };
 
     scm._createRotationFromOrientation = function(entity) {
         var orientation = entity.location.orientation;
-        var axisAngleRotation = new XML3DRotation();
-        axisAngleRotation.setQuaternion(orientation, orientation.w);
-        return axisAngleRotation;
+        var axisAngleRotation = XML3D.AxisAngle.fromQuat(orientation);
+        return axisAngleRotation.toDOMString();
     };
 
     scm._createScaleForEntityGroup = function(entity) {
         var scale = entity.mesh.scale;
-        var xml3dScale = new XML3DVec3(scale.x, scale.y, scale.z);
-        return xml3dScale;
+        var xml3dScale = new XML3D.Vec3(scale.x, scale.y, scale.z);
+        return xml3dScale.toDOMString();
     };
 
     /**
@@ -102,7 +101,7 @@ FIVES.Resources = FIVES.Resources || {};
     scm.applyOrientationToXML3DView = function(entity) {
         var transformationForEntity = entity.getTransformElement();
         if(transformationForEntity)
-            transformationForEntity.rotation.set(this._createRotationFromOrientation(entity));
+            transformationForEntity.rotation = this._createRotationFromOrientation(entity);
     };
 
     /**
@@ -113,7 +112,7 @@ FIVES.Resources = FIVES.Resources || {};
     scm.applyPositionToXML3DView = function(entity) {
         var transformationForEntity = entity.getTransformElement();
         if(transformationForEntity)
-            transformationForEntity.translation.set(this._createTranslationForEntityGroup(entity));
+            transformationForEntity.translation = this._createTranslationForEntityGroup(entity);
     };
 
     /**
@@ -122,11 +121,11 @@ FIVES.Resources = FIVES.Resources || {};
      * @param entity Entity that shall be inspected in 3rd person mode
      */
     scm.setCameraViewToEntity = function(entity) {
-        var view = $(this.xml3dElement.activeView)[0];
+        var view = $(this.xml3dElement.view)[0];
         var entityTransform = entity.xml3dView.transformElement;
         if(entityTransform)
         {
-            view.setDirection(entityTransform.rotation.rotateVec3(new XML3DVec3(1,0,0)));
+            view.setDirection(entityTransform.rotation.rotateVec3(new XML3D.Vec3(1,0,0)));
             var viewDirection = view.getDirection();
             var cameraTranslation = entityTransform.translation.subtract(viewDirection.scale(6));
             cameraTranslation.y += 1.2;
