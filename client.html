@@ -14,25 +14,20 @@
 
     </head>
     <body>
-        <div id="viewer">
+    <div id="viewer" style="position: absolute; top: 0px; left: 0px; width: 100%; height: 98%;">
             <nav class = "navbar navbar-default">
                 <div class = "navbar-header">
                     <div class = "navbar-brand">FiVES</div>
                 </div>
             </nav>
-
-            <div class = "row" style="height: 80%">
-                <div class = "col-md-9 col-md-offset-1" style="height: 100%" id = "xml3d_view">
                     <xml3d xmlns = "http://www.xml3d.org/2009/xml3d"
                            id="xml3dView"
-                           style="width: 100%; height: 80%;
+                           style="width: 100%; height: 90%;
                            background-size:100% 100%;
                            background-color: lightblue"
                            view = "#camera">
                         <view id="camera" position = "0 0 0">
                     </xml3d>
-                </div>
-            </div>
 
             <div class="modal fade" id="signin-modal" data-keyboard="false">
                 <div class="modal-dialog">
