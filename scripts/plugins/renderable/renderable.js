@@ -26,7 +26,7 @@ FIVES.Plugins = FIVES.Plugins || {};
     var r = renderable.prototype;
 
     r.addMeshForEntity = function(entity) {
-        if(entity.mesh.uri)
+        if(entity.mesh && entity.mesh.uri)
             FIVES.Resources.ResourceManager.loadExternalResource(entity, this._addMeshToScene.bind(this));
     };
 
