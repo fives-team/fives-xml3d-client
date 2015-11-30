@@ -1,719 +1,709 @@
-/*************************************************************************/
-/*                                                                       */
-/*  xml3d_scene_controller.js                                            */
-/*  Navigation method for XML3D                                             */
-/*                                                                       */
-/*  Copyright (C) 2010                                                   */
-/*  DFKI - German Research Center for Artificial Intelligence            */
-/*                                                                       */
-/*  xml3d.js is free software; you can redistribute it and/or modify     */
-/*  under the terms of the GNU General Public License as                 */
-/*  published by the Free Software Foundation; either version 2 of       */
-/*  the License, or (at your option) any later version.                  */
-/*                                                                       */
-/*  xml3d.js is distributed in the hope that it will be useful, but      */
-/*  WITHOUT ANY WARRANTY; without even the implied warranty of           */
-/*  MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.                 */
-/*  See the GNU General Public License                                   */
-/*  (http://www.fsf.org/licensing/licenses/gpl.html) for more details.   */
-/*                                                                       */
-/*************************************************************************/
+(function() {
+    /*************************************************************************/
+    /*                                                                       */
+    /*  camera.js                                                            */
+    /*  Simple navigation for XML3D scenes                                   */
+    /*                                                                       */
+    /*  Copyright (C) 2015                                                   */
+    /*  DFKI - German Research Center for Artificial Intelligence            */
+    /*                                                                       */
+    /*  xml3d.js is free software; you can redistribute it and/or modify     */
+    /*  under the terms of the GNU General Public License as                 */
+    /*  published by the Free Software Foundation; either version 2 of       */
+    /*  the License, or (at your option) any later version.                  */
+    /*                                                                       */
+    /*  xml3d.js is distributed in the hope that it will be useful, but      */
+    /*  WITHOUT ANY WARRANTY; without even the implied warranty of           */
+    /*  MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.                 */
+    /*  See the GNU General Public License                                   */
+    /*  (http://www.fsf.org/licensing/licenses/gpl.html) for more details.   */
+    /*                                                                       */
+    /*************************************************************************/
 
-//Check, if basics have already been defined
-if(!XML3D)
-    XML3D = {};
-if(!XML3D.util)
-    XML3D.util = {};
+    /**
+     * This simple camera controller provides two interaction modes:
+     *      examine : The camera revolves around the examinePoint
+     *      fly     : The camera has free movement through the scene
+     *
+     * Available options are:
+     *      {string} mode The interaction mode as described above. Defaults to 'examine'
+     *      {Vec3} examinePoint The point the camera revolves around if in examine mode
+     *      {number} rotateSpeed The rotation speed! Default: 3
+     *      {number} zoomSpeed The zoom speed in some arbitrary units, Default: 20
+     *      {bool} useKeys Toggle WSAD keyboard control, Default: false
+     *
+     * More documentation here:
+     * https://github.com/xml3d/xml3d.js/wiki/StandardCamera-(camera.js)
+     *
+     */
 
-XML3D.util.Timer = function() {
-    this.start();
-};
+    if(!XML3D)
+        throw("XML3D not found, please ensure the camera script is included after xml3d.js");
 
-XML3D.util.Timer.prototype.restart = function() {
-    var prevTime = this.time;
-    this.start();
-    return this.time - prevTime;
-};
+    /**
+     * The StandardCamera offers basic mouse and touch interaction with an XML3D scene.
+     *
+     * @param {HTMLElement} element The element that this camera will control
+     * @param {Object} opt
+     * @constructor
+     */
+    XML3D.StandardCamera = function(element, opt) {
+        if (!element || !element.tagName) {
+            throw("Must provide an element to control when initializing the StandardCamera!");
+        }
+        if (element.hasAttribute("style")) {
+            XML3D.debug.logWarning("This camera controller does not support CSS transforms, unexpected things may happen! Try using a <transform> element instead.");
+        }
+        if (XML3D.StandardCamera.Instance) {
+            XML3D.StandardCamera.Instance.detach();
+        }
+        XML3D.StandardCamera.Instance = false; // Prevent the camera from self-initializing
 
-XML3D.util.Timer.prototype.start = function() {
-    this.time = new Date().getTime();
-};
+        opt = opt || {};
+        this.element = element;
+        this.xml3d = this.getXML3DForElement(element);
 
+        this.mode = opt.mode || "examine";
+        this.touchTranslateMode = opt.touchTranslateMode || "twofinger";
 
-XML3D.Camera = function(view) {
-    this.view = view;
-};
+        this.examinePoint = opt.examinePoint || this.getInverseTranslationOfParent(element);
+        this.rotateSpeed = opt.rotateSpeed || 3;
+        this.zoomSpeed = opt.zoomSpeed || 20;
+        this.useKeys = opt.useKeys !== undefined ? opt.useKeys : false;
+        this.mousemovePicking = true;
+        this.activeKeys = {};
 
-XML3D.Camera.prototype.__defineGetter__("orientation", function() {
-    return this.view.orientation;
-});
-XML3D.Camera.prototype.__defineGetter__("position", function() {
-    return this.view.position;
-});
-XML3D.Camera.prototype.__defineSetter__("orientation", function(orientation) {
-    /*xml3d.debug.logError("Orientation: " + orientation);*/
-    //xml3d.copyRotation(this.view.orientation, orientation);
-    var ax = orientation.axis;
-    var str = ax.x + " " + ax.y + " " + ax.z + " " + orientation.angle;
-    this.view.setAttribute("orientation", str);
-});
-XML3D.Camera.prototype.__defineSetter__("position", function(position) {
-    //xml3d.copyVector(this.view.position, position);
-    var str = position.x + " " + position.y + " " + position.z;
-    this.view.setAttribute("position", str);
-});
-XML3D.Camera.prototype.__defineGetter__("direction", function() {
-    return this.view.getDirection();
-});
-XML3D.Camera.prototype.__defineGetter__("upVector", function() {
-    return this.view.getUpVector();
-});
-XML3D.Camera.prototype.__defineGetter__("fieldOfView", function() {
-    return this.view.fieldOfView;
-});
+        this.transformInterface = new TransformInterface(this.element, this.xml3d);
+        this.prevPos = {x: -1, y: -1};
+        this.prevTouchPositions = [];
+        this.prevTouchPositions[0] = {
+            x : -1,
+            y : -1
+        };
+        this.prevZoomVectorLength = null;
+        this.upVector = this.transformInterface.upVector;
 
-XML3D.Camera.prototype.rotateAroundPoint = function(q0, p0) {
-    //xml3d.debug.logError("Orientation: " + this.orientation.multiply(q0).normalize());
-    var tmp = this.orientation.multiply(q0);
-    tmp.normalize();
-    this.orientation = tmp;
-    var trans = new window.XML3DRotation(this.inverseTransformOf(q0.axis), q0.angle).rotateVec3(this.position.subtract(p0));
-    this.position = p0.add(trans);
-};
-
-XML3D.Camera.prototype.lookAround = function(rotSide, rotUp, upVector) {
-    //xml3d.debug.logError("Orientation: " + this.orientation.multiply(q0).normalize());
-    var check = rotUp.multiply(this.orientation);
-    var tmp;
-    if( Math.abs(upVector.dot(check.rotateVec3(new window.XML3DVec3(0,0,-1)))) > 0.95 )
-        tmp = rotSide;
-    else
-        tmp = rotSide.multiply(rotUp);
-    tmp.normalize();
-    tmp = tmp.multiply(this.orientation);
-    tmp.normalize();
-    this.orientation = tmp;
-};
-
-XML3D.Camera.prototype.rotate = function(q0) {
-    this.orientation = this.orientation.multiply(q0).normalize();
-};
-
-XML3D.Camera.prototype.translate = function(t0) {
-    this.position = this.position.add(t0);
-};
-
-XML3D.Camera.prototype.inverseTransformOf = function(vec) {
-    return this.orientation.rotateVec3(vec);
-};
-
-XML3D.Xml3dSceneController = function(xml3dElement) {
-    this.webgl = typeof(xml3dElement.style) !== 'object';
-
-    this.xml3d = xml3dElement;
-    this.canvas = this.webgl ?  xml3dElement.canvas : xml3dElement;
-
-    var view = this.getView();
-    if (!view)
-    {
-        XML3D.debug.logWarning("No view found, rendering disabled!");
-        if (xml3dElement.update)
-            xml3dElement.update(); // TODO: Test
-    }
-    if (!this.xml3d || !view)
-    {
-        XML3D.debug.logError("Could not initialize Camera Controller.");
-        return;
-    }
-
-    this.camera = new XML3D.Camera(view);
-    this.timer = new XML3D.util.Timer();
-    this.prevPos = {x: -1, y: -1};
-    this.prevTouchPositions = new Array();
-    this.prevTouchPositions[0] = {
-        x : -1,
-        y : -1
+        this.attach();
     };
-    this.prevZoomVectorLength;
 
-    this.mode = "examine";
-    this.touchTranslateMode = "twofinger";
-    this.revolveAroundPoint = new window.XML3DVec3(0, 0, 0);
-    this.rotateSpeed = 1;
-    this.zoomSpeed = 20;
-    this.spinningSensitivity = 0.3;
-    this.isSpinning = false;
+    /**
+     * Translate the camera by the given vector
+     * @param {XML3D.Vec3} vec The vector to translate the camera by
+     */
+    XML3D.StandardCamera.prototype.translate = function(vec) {
+        this.transformInterface.translate(vec);
+    };
 
-    this.upVector = this.camera.upVector;
+    /**
+     * Rotate the camera with the given quaternion rotation
+     * @param {XML3D.Quat} rot The quaternion rotation to rotate the camera with
+     */
+    XML3D.StandardCamera.prototype.rotate = function(rot) {
+        this.transformInterface.rotate(rot);
+    };
 
-    this.moveSpeedElement = document.getElementById("moveSpeed");
-    this.useKeys = document.getElementById("useKeys");
-
-    var navigations = xml3dElement.getElementsByTagName("navigation");
-
-    if(navigations.length > 0)
-    {
-        var config = navigations[0];
-        this.mode = config.getAttribute("mode");
-
-        if(this.mode == "none")
+    /**
+     * Moves the camera to a new position and orientation that centers on the given object. After calling this the camera
+     * will be positioned in front of the object looking down the Z axis at it. The camera will be placed far enough away
+     * that the whole object is visible. If in examine mode the examine point will be set to the center of the object.
+     *
+     * @param {HTMLElement} element The element to be examined. May be a <group>, <mesh> or <model> tag.
+     */
+    XML3D.StandardCamera.prototype.examine = function(element) {
+        if (!element.getWorldBoundingBox) {
+            XML3D.debug.logError(element + " is not a valid examine target. Valid target elements include <group>, <mesh> and <model>.");
             return;
-
-        if(this.mode != "walk" && this.mode != "examine" )
-            this.mode = "examine";
-
-        this.touchTranslateMode = config.getAttribute("touchtranslate");
-
-        if(this.touchTranslateMode != "twofinger" && this.touchTranslateMode != "threefinger" )
-            this.touchTranslateMode = "twofinger";
-
-        if(config.getAttribute("resolveAround")){
-            XML3D.debug.logWarning("resolveAround is obsolete. Use 'revolveAround' instead!");
-            this.revolveAroundPoint.setVec3Value(config.getAttribute("resolveAround"));
         }
-        if(config.getAttribute("revolveAround")){
-            this.revolveAroundPoint.setVec3Value(config.getAttribute("revolveAround"));
+        var bb = element.getWorldBoundingBox();
+        var center = bb.center();
+        var r = center.len();
+        var newPos = center.clone();
+        newPos.z += r / Math.tan(this.transformInterface.fieldOfView / 2);
+        this.transformInterface.position = newPos;
+        this.transformInterface.orientation = new XML3D.Quat();
+        this.examinePoint = bb.center();
+    };
+
+    /**
+     * Sets the examine point of the camera. This has no effect if the camera is in "fly" mode.
+     * @param p The new examine point
+     */
+    XML3D.StandardCamera.prototype.setExaminePoint = function(p) {
+        this.examinePoint = p;
+    };
+
+    /**
+     * Orient the camera to look at the given point
+     *
+     * @param {XML3D.Vec3} point
+     */
+    XML3D.StandardCamera.prototype.lookAt = function(point) {
+        this.transformInterface.lookAt(point);
+    };
+
+    /**
+     * Start listening for input events.
+     */
+    XML3D.StandardCamera.prototype.attach = function() {
+        var self = this;
+        this._evt_mousedown = function(e) {self.mousePressEvent(e);};
+        this._evt_mouseup = function(e) {self.mouseReleaseEvent(e);};
+        this._evt_mousemove = function(e) {self.mouseMoveEvent(e);};
+        this._evt_contextmenu = function(e) {e.preventDefault();e.stopPropagation();};
+        this._evt_keydown = function(e) {self.keyHandling.call(self, e, "down");};
+        this._evt_keyup = function(e) {self.keyHandling.call(self, e, "up");};
+
+        this._evt_touchstart = function(e) {self.touchStartEvent(e);};
+        this._evt_touchmove = function(e) {self.touchMoveEvent(e);};
+        this._evt_touchend = function(e) {self.touchEndEvent(e);};
+        this._evt_touchcancel = function(e) {self.touchEndEvent(e);};
+
+
+        this.xml3d.addEventListener("mousedown", this._evt_mousedown, false);
+        document.addEventListener("mouseup", this._evt_mouseup, false);
+        document.addEventListener("mousemove",this._evt_mousemove, false);
+
+        this.xml3d.addEventListener("touchstart", this._evt_touchstart, false);
+        document.addEventListener("touchend", this._evt_touchend, false);
+        document.addEventListener("touchmove",this._evt_touchmove, false);
+        document.addEventListener("touchcancel", this._evt_touchend, false);
+
+        this.xml3d.addEventListener("contextmenu", this._evt_contextmenu, false);
+        if (this.useKeys) {
+            document.addEventListener("keydown", this._evt_keydown, false);
+            document.addEventListener("keyup", this._evt_keyup, false);
         }
-        if(config.getAttribute("speed"))
-        {
-            this.zoomSpeed *= config.getAttribute("speed");
+    };
+
+    /**
+     * Stop listening for input events.
+     */
+    XML3D.StandardCamera.prototype.detach = function() {
+        this.xml3d.removeEventListener("mousedown", this._evt_mousedown, false);
+        document.removeEventListener("mouseup", this._evt_mouseup, false);
+        document.removeEventListener("mousemove",this._evt_mousemove, false);
+
+        this.xml3d.removeEventListener("touchstart", this._evt_touchstart, false);
+        document.removeEventListener("touchend", this._evt_touchend, false);
+        document.removeEventListener("touchmove",this._evt_touchmove, false);
+        document.removeEventListener("touchcancel", this._evt_touchend, false);
+
+        this.xml3d.removeEventListener("contextmenu", this._evt_contextmenu, false);
+        if (this.useKeys) {
+            document.removeEventListener("keydown", this._evt_keydown, false);
+            document.removeEventListener("keyup", this._evt_keyup, false);
         }
-    }
-
-    this.attach();
-};
-
-XML3D.Xml3dSceneController.prototype.setCamera = function(newCamera) {
-    this.camera = new XML3D.Camera(newCamera);
-    this.upVector = this.camera.upVector;
-};
-
-XML3D.Xml3dSceneController.prototype.setRevolvePoint = function(vec) {
-    this.revolveAroundPoint = vec;
-};
-
-XML3D.Xml3dSceneController.prototype.attach = function() {
-    var self = this;
-    this._evt_mousedown = function(e) {self.mousePressEvent(e);};
-    this._evt_mouseup = function(e) {self.mouseReleaseEvent(e);};
-    this._evt_mousemove = function(e) {self.mouseMoveEvent(e);};
-    this._evt_contextmenu = function(e) {self.stopEvent(e);};
-    this._evt_keydown = function(e) {self.keyHandling(e);};
-
-    this._evt_touchstart = function(e) {self.touchStartEvent(e);};
-    this._evt_touchmove = function(e) {self.touchMoveEvent(e);};
-    this._evt_touchend = function(e) {self.touchEndEvent(e);};
-    this._evt_touchcancel = function(e) {self.touchEndEvent(e);};
+    };
 
 
-    this.canvas.addEventListener("mousedown", this._evt_mousedown, false);
-    document.addEventListener("mouseup", this._evt_mouseup, false);
-    document.addEventListener("mousemove",this._evt_mousemove, false);
+    //---------- End public API ----------------
 
-    this.canvas.addEventListener("touchstart", this._evt_touchstart, false);
-    document.addEventListener("touchend", this._evt_touchend, false);
-    document.addEventListener("touchmove",this._evt_touchmove, false);
-    document.addEventListener("touchcancel", this._evt_touchend, false);
-
-    this.canvas.addEventListener("contextmenu", this._evt_contextmenu, false);
-    if (this.useKeys)
-        document.addEventListener("keydown", this._evt_keydown, false);
-};
-
-XML3D.Xml3dSceneController.prototype.detach = function() {
-    this.canvas.removeEventListener("mousedown", this._evt_mousedown, false);
-    document.removeEventListener("mouseup", this._evt_mouseup, false);
-    document.removeEventListener("mousemove",this._evt_mousemove, false);
-
-    this.canvas.removeEventListener("touchstart", this._evt_touchstart, false);
-    document.removeEventListener("touchend", this._evt_touchend, false);
-    document.removeEventListener("touchmove",this._evt_touchmove, false);
-    document.removeEventListener("touchcancel", this._evt_touchend, false);
-
-    this.canvas.removeEventListener("contextmenu", this._evt_contextmenu, false);
-    if (this.useKeys)
-        document.removeEventListener("keydown", this._evt_keydown, false);
-};
-
-XML3D.Xml3dSceneController.prototype.__defineGetter__("width", function() { return this.canvas.width;});
-XML3D.Xml3dSceneController.prototype.__defineGetter__("height", function() { return this.canvas.height;});
-
-XML3D.Xml3dSceneController.prototype.getView = function() {
-    var activeView = this.xml3d.activeView;
-    XML3D.debug.logInfo("Active View: " + activeView);
-
-    if (activeView)
-    {
-        if (activeView.substring(0, 1) == '#') {
-            activeView = activeView.substring(1);
+    Object.defineProperty(XML3D.StandardCamera.prototype, "width", {
+        get : function() {
+            return this.xml3d.width;
         }
-        XML3D.debug.logInfo("Trying to resolve view '" + activeView +"'");
-        activeView = document.getElementById(activeView);
-    }
+    });
+    Object.defineProperty(XML3D.StandardCamera.prototype, "height", {
+        get : function() {
+            return this.xml3d.height;
+        }
+    });
 
-    // if activeView is not defined or the reference is not valid
-    // use the first view element
-    if (!activeView)
-    {
-        XML3D.debug.logWarning("No view referenced. Trying to use first view.");
-        activeView = this.xml3d.querySelector('view');
-    }
+    XML3D.StandardCamera.prototype.getXML3DForElement = function(element) {
+        var node = element.parentNode;
+        while (node && node.localName !== "xml3d") {
+            node = node.parentNode;
+        }
+        if (!node) {
+            throw("Could not find the root XML3D element for the given element.");
+        }
+        return node;
+    };
 
-    if(false)
-    {
-        // no view present at all
-        // create new one and append it to defs element
-        XML3D.debug.logWarning("No view defined. Trying to create view.");
+    XML3D.StandardCamera.prototype.getInverseTranslationOfParent = function(element) {
+        if (!element.parentElement.getWorldMatrix) {
+            return new XML3D.Vec3(0,0,0);
+        }
+        var tmat = element.parentElement.getWorldMatrix();
+        tmat = tmat.invert();
+        return new XML3D.Vec3(tmat.m41, tmat.m42, tmat.m43);
+    };
 
-        // create it
-        activeView = document.createElementNS(XML3D.xml3dNS, "view");
+    XML3D.StandardCamera.prototype.NO_MOUSE_ACTION = "no_action";
+    XML3D.StandardCamera.prototype.TRANSLATE = "translate";
+    XML3D.StandardCamera.prototype.DOLLY = "dolly";
+    XML3D.StandardCamera.prototype.ROTATE = "rotate";
+    XML3D.StandardCamera.prototype.LOOKAROUND = "lookaround";
 
-        var id = "created_xml3d.Xml3dSceneController.view_";
-        id += "" + Math.random();
-        activeView.setAttribute("id", id);
+    XML3D.StandardCamera.prototype.mousePressEvent = function(event) {
+        // This listener captures events on the XML3D element only
+        var ev = event || window.event;
+        event.preventDefault(); // Prevent text dragging
 
-        // append it to defs
-        var defsEl =  document.evaluate('xml3d:defs[1]', this.xml3d, function() {
-            return XML3D.xml3dNS;
-        }, XPathResult.FIRST_ORDERED_NODE_TYPE, null).singleNodeValue;
-
-        if(!defsEl)
-        {
-            defsEl = document.createElementNS(XML3D.xml3dNS, "defs");
-            this.xml3d.appendChild(defsEl);
+        switch (ev.button) {
+            case 0:
+                if(this.mode == "examine")
+                    this.action = this.ROTATE;
+                else
+                    this.action = this.LOOKAROUND;
+                break;
+            case 1:
+                this.action = this.TRANSLATE;
+                break;
+            case 2:
+                this.action = this.DOLLY;
+                break;
+            default:
+                this.action = this.NO_MOUSE_ACTION;
         }
 
-        defsEl.appendChild(activeView);
-    }
-
-    return activeView;
-};
-
-XML3D.Xml3dSceneController.prototype.stopEvent = function(ev) {
-    if (ev.preventDefault)
-        ev.preventDefault();
-    if (ev.stopPropagation)
-        ev.stopPropagation();
-    ev.returnValue = false;
-};
-
-XML3D.Xml3dSceneController.prototype.update = function() {
-    if (this.animation || this.needUpdate) {
-        this.needUpdate = false;
-        if (this.xml3d.update)
-            this.xml3d.update();
-    }
-};
-
-XML3D.Xml3dSceneController.prototype.NO_MOUSE_ACTION = 0;
-XML3D.Xml3dSceneController.prototype.TRANSLATE = 1;
-XML3D.Xml3dSceneController.prototype.DOLLY = 2;
-XML3D.Xml3dSceneController.prototype.ROTATE = 3;
-XML3D.Xml3dSceneController.prototype.LOOKAROUND = 4;
-
-XML3D.Xml3dSceneController.prototype.mousePressEvent = function(event) {
-
-    var ev = event || window.event;
-
-    var button = (ev.which || ev.button);
-    switch (button) {
-        case 1:
-            if(this.mode == "examine")
-                this.action = this.ROTATE;
-            else
-                this.action = this.LOOKAROUND;
-            break;
-        case 2:
-            this.action = this.TRANSLATE;
-            break;
-        case 3:
-            this.action = this.DOLLY;
-            break;
-        default:
-            this.action = this.NO_MOUSE_ACTION;
-    }
-
-    this.prevPos.x = ev.pageX;
-    this.prevPos.y = ev.pageY;
-
-    this.stopEvent(event);
-    return false;
-};
-
-XML3D.Xml3dSceneController.prototype.mouseReleaseEvent = function(event) {
-    this.stopEvent(event);
-
-    //if (this.action == this.ROTATE && this.mouseSpeed > this.spinningSensitivity)
-    //    this.startSpinning();
-
-    this.action = this.NO_MOUSE_ACTION;
-    return false;
-};
-
-XML3D.Xml3dSceneController.prototype.startSpinning = new function() {
-    this.isSpinning = true;
-    // TODO
-};
-
-XML3D.Xml3dSceneController.prototype.computeMouseSpeed = function(event) {
-    var dx = (event.pageX - this.prevPos.x);
-    var dy = (event.pageY - this.prevPos.y);
-    var dist = Math.sqrt(+dx*dx + dy*+dy);
-    this.delay = this.timer.restart();
-    if (this.delay == 0)
-        this.mouseSpeed = dist;
-      else
-        this.mouseSpeed = dist/this.delay;
-    XML3D.debug.logWarning("Mouse speed: " + this.mouseSpeed);
-};
-
-XML3D.Xml3dSceneController.prototype.mouseMoveEvent = function(event, camera) {
-
-    var ev = event || window.event;
-    if (!this.action)
-        return;
-    switch(this.action) {
-        case(this.TRANSLATE):
-            var f = 2.0* Math.tan(this.camera.fieldOfView/2.0) / this.height;
-            var dx = f*(ev.pageX - this.prevPos.x);
-            var dy = f*(ev.pageY - this.prevPos.y);
-            var trans = new window.XML3DVec3(-dx, dy, 0.0);
-            this.camera.translate(this.camera.inverseTransformOf(trans));
-            break;
-        case(this.DOLLY):
-            var dy = this.zoomSpeed * (ev.pageY - this.prevPos.y) / this.height;
-            this.camera.translate(this.camera.inverseTransformOf(new window.XML3DVec3(0, 0, dy)));
-            break;
-        case(this.ROTATE):
-
-            var dx = -this.rotateSpeed * (ev.pageX - this.prevPos.x) * 2.0 * Math.PI / this.width;
-            var dy = -this.rotateSpeed * (ev.pageY - this.prevPos.y) * 2.0 * Math.PI / this.height;
-
-            var mx = new window.XML3DRotation(new window.XML3DVec3(0,1,0), dx);
-            var my = new window.XML3DRotation(new window.XML3DVec3(1,0,0), dy);
-            //this.computeMouseSpeed(ev);
-            this.camera.rotateAroundPoint(mx.multiply(my), this.revolveAroundPoint);
-            break;
-        case(this.LOOKAROUND):
-            var dx = -this.rotateSpeed * (ev.pageX - this.prevPos.x) * 2.0 * Math.PI / this.width;
-            var dy = this.rotateSpeed * (ev.pageY - this.prevPos.y) * 2.0 * Math.PI / this.height;
-            var cross = this.upVector.cross(this.camera.direction);
-
-            var mx = new window.XML3DRotation( this.upVector , dx);
-            var my = new window.XML3DRotation( cross , dy);
-
-            this.camera.lookAround(mx, my, this.upVector);
-            break;
-    }
-
-    if (this.action != this.NO_MOUSE_ACTION)
-    {
-        this.needUpdate = true;
         this.prevPos.x = ev.pageX;
         this.prevPos.y = ev.pageY;
-        event.returnValue = false;
 
-        this.update();
-    }
-    this.stopEvent(event);
-    return false;
-};
+        if (this.action !== this.NO_MOUSE_ACTION) {
+            //Disable object picking during camera actions
+            this.mousemovePicking = XML3D.options.getValue("renderer-mousemove-picking");
+            XML3D.options.setValue("renderer-mousemove-picking", false);
+        }
+    };
 
+    XML3D.StandardCamera.prototype.mouseReleaseEvent = function(event) {
+        if (this.action !== this.NO_MOUSE_ACTION) {
+            XML3D.options.setValue("renderer-mousemove-picking", this.mousemovePicking);
+        }
 
-// -----------------------------------------------------
-// touch rotation and movement
-// -----------------------------------------------------
+        this.action = this.NO_MOUSE_ACTION;
+    };
 
+    XML3D.StandardCamera.prototype.mouseMoveEvent = function(event) {
+        var ev = event || window.event;
 
-XML3D.Xml3dSceneController.prototype.touchStartEvent = function(event) {
-    if (event.target.nodeName.toLowerCase() == "xml3d") {
-        this.stopEvent(event);
-    }
+        if (!this.action)
+            return;
+        var dx, dy, mx, my;
+        switch(this.action) {
+            case(this.TRANSLATE):
+                var f = 2.0* Math.tan(this.transformInterface.fieldOfView/2.0) / this.height;
+                dx = f*(ev.pageX - this.prevPos.x) * this.zoomSpeed;
+                dy = f*(ev.pageY - this.prevPos.y) * this.zoomSpeed;
+                var trans = new XML3D.Vec3(-dx, dy, 0.0);
+                trans = this.transformInterface.inverseTransformOf(trans);
+                this.transformInterface.translate(trans);
+                this.examinePoint = this.examinePoint.add(trans);
+                break;
+            case(this.DOLLY):
+                dy = this.zoomSpeed * (ev.pageY - this.prevPos.y) / this.height;
+                this.transformInterface.translate(this.transformInterface.inverseTransformOf(new XML3D.Vec3(0, 0, dy)));
+                break;
+            case(this.ROTATE):
+                dx = -this.rotateSpeed*0.1 * (ev.pageX - this.prevPos.x) * 2.0 * Math.PI / this.width;
+                dy = -this.rotateSpeed*0.1 * (ev.pageY - this.prevPos.y) * 2.0 * Math.PI / this.height;
 
-    var ev = event || window.event;
+                mx = XML3D.Quat.fromAxisAngle([0,1,0], dx);
+                my = XML3D.Quat.fromAxisAngle([1,0,0], dy);
+                mx = mx.mul(my);
+                this.transformInterface.rotateAroundPoint(mx, this.examinePoint);
+                break;
+            case(this.LOOKAROUND):
+                dx = -this.rotateSpeed*0.1 * (ev.pageX - this.prevPos.x) * 2.0 * Math.PI / this.width;
+                dy = this.rotateSpeed*0.1 * (ev.pageY - this.prevPos.y) * 2.0 * Math.PI / this.height;
+                var cross = this.upVector.cross(this.transformInterface.direction);
 
-    var button = (ev.which || ev.button);
+                mx = XML3D.Quat.fromAxisAngle( this.upVector , dx);
+                my = XML3D.Quat.fromAxisAngle( cross , dy);
 
-    switch (ev.touches.length) {
-        case 1:
-            if(this.mode == "examine")
-                this.action = this.ROTATE;
-            else
-                this.action = this.LOOKAROUND;
-            break;
-        case 2:
-            this.action = this.DOLLY;
-            break;
-        case 3:
-            this.action = this.TRANSLATE;
-            break;
-        default:
-            this.action = this.NO_MOUSE_ACTION;
-    }
+                this.transformInterface.lookAround(mx, my, this.upVector);
+                break;
+        }
 
-    var touchPositions = new Array();
-    for (var i=0; i<ev.touches.length; i++) {
-            touchPositions[i] = {x: ev.touches[i].pageX, y: ev.touches[i].pageY};
-    }
-    this.prevTouchPositions = touchPositions;
-
-    return false;
-};
-
-XML3D.Xml3dSceneController.prototype.touchEndEvent = function(event) {
-    if (event.target.nodeName.toLowerCase() == "xml3d") {
-        this.stopEvent(event);
-    }
-
-    var ev = event || window.event;
-    //if (this.action == this.ROTATE && this.mouseSpeed > this.spinningSensitivity)
-    //    this.startSpinning();
-
-    switch (ev.touches.length) {
-        case 1:
-            this.prevZoomVectorLength = undefined;
-            if(this.mode == "examine")
-                this.action = this.ROTATE;
-            else
-                this.action = this.LOOKAROUND;
-            break;
-        case 2:
-            this.action = this.DOLLY;
-            break;
-        case 3:
-            this.action = this.TRANSLATE;
-            break;
-        default:
-            this.action = this.NO_MOUSE_ACTION;
-    }
-
-    var touchPositions = new Array();
-    for (var i=0; i<ev.touches.length; i++) {
-            touchPositions[i] = {x: ev.touches[i].pageX, y: ev.touches[i].pageY};
-    }
-    this.prevTouchPositions = touchPositions;
-
-    return false;
-};
+        if (this.action != this.NO_MOUSE_ACTION)
+        {
+            this.prevPos.x = ev.pageX;
+            this.prevPos.y = ev.pageY;
+        }
+    };
 
 
-XML3D.Xml3dSceneController.prototype.touchMoveEvent = function(event, camera) {
-    if (event.target.nodeName.toLowerCase() == "xml3d") {
-        this.stopEvent(event);
-    }
+    // -----------------------------------------------------
+    // touch rotation and movement
+    // -----------------------------------------------------
 
-    var ev = event || window.event;
-    if (!this.action)
-        return;
+    XML3D.StandardCamera.prototype.touchStartEvent = function(event) {
+        // This listener captures events on the XML3D element only
+        var ev = event || window.event;
 
-    switch(this.action) {
-        case(this.TRANSLATE):
-            if (this.touchTranslateMode == "threefinger") {
-                var f = 2.0* Math.tan(this.camera.fieldOfView/2.0) / this.height;
-                var dx = f*(ev.touches[0].pageX - this.prevTouchPositions[0].x);
-                var dy = f*(ev.touches[0].pageY - this.prevTouchPositions[0].y);
-                var trans = new window.XML3DVec3(-dx*this.zoomSpeed, dy*this.zoomSpeed, 0.0);
-                this.camera.translate(this.camera.inverseTransformOf(trans));
-            }
-            break;
-        case(this.DOLLY):
-            if (this.touchTranslateMode == "twofinger") {
-                //apple-style 2-finger dolly + translate
-                var prevMidpoint;
+        switch (ev.touches.length) {
+            case 1:
+                if(this.mode == "examine")
+                    this.action = this.ROTATE;
+                else
+                    this.action = this.LOOKAROUND;
+                break;
+            case 2:
+                this.action = this.DOLLY;
+                break;
+            case 3:
+                this.action = this.TRANSLATE;
+                break;
+            default:
+                this.action = this.NO_MOUSE_ACTION;
+        }
 
-                if (this.prevTouchPositions.length > 1) {
-                    prevMidpoint = {x:(this.prevTouchPositions[0].x + this.prevTouchPositions[1].x) / 2 ,
-                                    y:(this.prevTouchPositions[0].y + this.prevTouchPositions[1].y) / 2 }
-                }
-
-                if (prevMidpoint !== undefined) {
-                    var curMidpoint = {x:(ev.touches[0].pageX + ev.touches[1].pageX) / 2 ,
-                                       y:(ev.touches[0].pageY + ev.touches[1].pageY) / 2 }
-                    var f = 2.0* Math.tan(this.camera.fieldOfView/2.0) / this.height;
-                    var dx = f*(curMidpoint.x - prevMidpoint.x);
-                    var dy = f*(curMidpoint.y - prevMidpoint.y);
-                    var trans = new window.XML3DVec3(-dx*this.zoomSpeed, dy*this.zoomSpeed, 0.0);
-                    this.camera.translate(this.camera.inverseTransformOf(trans));
-                }
-            }
-
-            if (this.prevZoomVectorLength !== undefined) {
-                var dv = {x: ev.touches[0].pageX - ev.touches[1].pageX, y: ev.touches[0].pageY - ev.touches[1].pageY};
-                var currLength = Math.sqrt(dv.x*dv.x + dv.y*dv.y);
-
-                var dy = this.zoomSpeed * (currLength - this.prevZoomVectorLength) / this.height;
-                this.camera.translate(this.camera.inverseTransformOf(new window.XML3DVec3(0, 0, -dy)));
-
-                this.prevZoomVectorLength = currLength;
-            } else {
-                var dv = {x: ev.touches[0].pageX - ev.touches[1].pageX, y: ev.touches[0].pageY - ev.touches[1].pageY};
-                this.prevZoomVectorLength = Math.sqrt(dv.x*dv.x + dv.y*dv.y);
-            }
-
-            break;
-        case(this.ROTATE):
-            var dx = -this.rotateSpeed * (ev.touches[0].pageX - this.prevTouchPositions[0].x) * 2.0 * Math.PI / this.width;
-            var dy = -this.rotateSpeed * (ev.touches[0].pageY - this.prevTouchPositions[0].y) * 2.0 * Math.PI / this.height;
-
-            var mx = new window.XML3DRotation(new window.XML3DVec3(0,1,0), dx);
-            var my = new window.XML3DRotation(new window.XML3DVec3(1,0,0), dy);
-            //this.computeMouseSpeed(ev);
-            this.camera.rotateAroundPoint(mx.multiply(my), this.revolveAroundPoint);
-            break;
-        case(this.LOOKAROUND):
-            var dx = -this.rotateSpeed * (ev.touches[0].pageX - this.prevTouchPositions[0].x) * 2.0 * Math.PI / this.width;
-            var dy = this.rotateSpeed * (ev.touches[0].pageY - this.prevTouchPositions[0].y) * 2.0 * Math.PI / this.height;
-            var cross = this.upVector.cross(this.camera.direction);
-
-            var mx = new window.XML3DRotation( this.upVector , dx);
-            var my = new window.XML3DRotation( cross , dy);
-
-            this.camera.lookAround(mx, my, this.upVector);
-            break;
-    }
-
-    if (this.action != this.NO_MOUSE_ACTION)
-    {
-        this.needUpdate = true;
-
-        var touchPositions = new Array();
+        var touchPositions = [];
         for (var i=0; i<ev.touches.length; i++) {
-            touchPositions[i] = {x: ev.touches[i].pageX, y: ev.touches[i].pageY};
+                touchPositions[i] = {x: ev.touches[i].pageX, y: ev.touches[i].pageY};
         }
         this.prevTouchPositions = touchPositions;
+    };
 
-        event.returnValue = false;
+    XML3D.StandardCamera.prototype.touchEndEvent = function(event) {
+        var ev = event || window.event;
 
-        this.update();
-    }
-
-    return false;
-};
-
-
-// -----------------------------------------------------
-// key movement
-// -----------------------------------------------------
-
-XML3D.Xml3dSceneController.prototype.keyHandling = function(e) {
-    var KeyID = e.keyCode;
-    if (KeyID == 0) {
-        switch (e.which) {
-        case 119:
-            KeyID = 87;
-            break; // w
-        case 100:
-            KeyID = 68;
-            break; // d
-        case 97:
-            KeyID = 65;
-            break; // a
-        case 115:
-            KeyID = 83;
-            break; // s
+        switch (ev.touches.length) {
+            case 1:
+                this.prevZoomVectorLength = null;
+                if(this.mode == "examine")
+                    this.action = this.ROTATE;
+                else
+                    this.action = this.LOOKAROUND;
+                break;
+            case 2:
+                this.action = this.DOLLY;
+                break;
+            case 3:
+                this.action = this.TRANSLATE;
+                break;
+            default:
+                this.action = this.NO_MOUSE_ACTION;
         }
-    }
 
-    var xml3d = this.xml3d;
-    // alert(xml3d);
-    var camera = this.camera;
-    var dir = camera.direction;
-    if (xml3d) {
+        var touchPositions = [];
+        for (var i=0; i<ev.touches.length; i++) {
+                touchPositions[i] = {x: ev.touches[i].pageX, y: ev.touches[i].pageY};
+        }
+        this.prevTouchPositions = touchPositions;
+    };
+
+    XML3D.StandardCamera.prototype.touchMoveEvent = function(event) {
+        var ev = event || window.event;
+
+        if (!this.action)
+            return;
+
+        event.preventDefault(); // Prevent a mouse event from also being dispatched
+
+        var f, dx, dy, dv, trans, mx, my;
+        switch(this.action) {
+            case(this.TRANSLATE):
+                if (this.touchTranslateMode == "threefinger") {
+                    f = 2.0* Math.tan(this.transformInterface.fieldOfView/2.0) / this.height;
+                    dx = f*(ev.touches[0].pageX - this.prevTouchPositions[0].x);
+                    dy = f*(ev.touches[0].pageY - this.prevTouchPositions[0].y);
+                    trans = new XML3D.Vec3(-dx*this.zoomSpeed, dy*this.zoomSpeed, 0.0);
+                    trans = this.transformInterface.inverseTransformOf(trans);
+                    this.transformInterface.translate(trans);
+                    this.examinePoint = this.examinePoint.add(trans);
+                }
+                break;
+            case(this.DOLLY):
+                if (this.touchTranslateMode == "twofinger") {
+                    //apple-style 2-finger dolly + translate
+                    var prevMidpoint;
+
+                    if (this.prevTouchPositions.length > 1) {
+                        prevMidpoint = {x:(this.prevTouchPositions[0].x + this.prevTouchPositions[1].x) / 2 ,
+                                        y:(this.prevTouchPositions[0].y + this.prevTouchPositions[1].y) / 2 }
+                    }
+
+                    if (prevMidpoint !== undefined) {
+                        var curMidpoint = {x:(ev.touches[0].pageX + ev.touches[1].pageX) / 2 ,
+                                           y:(ev.touches[0].pageY + ev.touches[1].pageY) / 2 };
+                        f = 2.0* Math.tan(this.transformInterface.fieldOfView/2.0) / this.height;
+                        dx = f*(curMidpoint.x - prevMidpoint.x);
+                        dy = f*(curMidpoint.y - prevMidpoint.y);
+                        trans = new XML3D.Vec3(-dx*this.zoomSpeed, dy*this.zoomSpeed, 0.0);
+                        this.transformInterface.translate(this.transformInterface.inverseTransformOf(trans));
+                    }
+                }
+
+                if (this.prevZoomVectorLength !== null) {
+                    dv = {x: ev.touches[0].pageX - ev.touches[1].pageX, y: ev.touches[0].pageY - ev.touches[1].pageY};
+                    var currLength = Math.sqrt(dv.x*dv.x + dv.y*dv.y);
+
+                    dy = this.zoomSpeed * (currLength - this.prevZoomVectorLength) / this.height;
+                    this.transformInterface.translate(this.transformInterface.inverseTransformOf(new XML3D.Vec3(0, 0, -dy)));
+
+                    this.prevZoomVectorLength = currLength;
+                } else {
+                    dv = {x: ev.touches[0].pageX - ev.touches[1].pageX, y: ev.touches[0].pageY - ev.touches[1].pageY};
+                    this.prevZoomVectorLength = Math.sqrt(dv.x*dv.x + dv.y*dv.y);
+                }
+
+                break;
+            case(this.ROTATE):
+                dx = -this.rotateSpeed*0.1 * (ev.touches[0].pageX - this.prevTouchPositions[0].x) * 2.0 * Math.PI / this.width;
+                dy = -this.rotateSpeed*0.1 * (ev.touches[0].pageY - this.prevTouchPositions[0].y) * 2.0 * Math.PI / this.height;
+
+                mx = XML3D.Quat.fromAxisAngle([0,1,0], dx);
+                my = XML3D.Quat.fromAxisAngle([1,0,0], dy);
+                mx = mx.mul(my);
+                this.transformInterface.rotateAroundPoint(mx, this.examinePoint);
+                break;
+            case(this.LOOKAROUND):
+                dx = -this.rotateSpeed*0.1 * (ev.touches[0].pageX - this.prevTouchPositions[0].x) * 2.0 * Math.PI / this.width;
+                dy = this.rotateSpeed*0.1 * (ev.touches[0].pageY - this.prevTouchPositions[0].y) * 2.0 * Math.PI / this.height;
+                var cross = this.upVector.cross(this.transformInterface.direction);
+
+                mx = XML3D.Quat.fromAxisAngle( this.upVector , dx);
+                my = XML3D.Quat.fromAxisAngle( cross , dy);
+
+                this.transformInterface.lookAround(mx, my, this.upVector);
+                break;
+        }
+
+        if (this.action != this.NO_MOUSE_ACTION) {
+            var touchPositions = [];
+            for (var i=0; i<ev.touches.length; i++) {
+                touchPositions[i] = {x: ev.touches[i].pageX, y: ev.touches[i].pageY};
+            }
+            this.prevTouchPositions = touchPositions;
+        }
+    };
+
+
+    // -----------------------------------------------------
+    // key movement
+    // -----------------------------------------------------
+
+    XML3D.StandardCamera.prototype.keyHandling = function(e, action) {
+        var KeyID = e.keyCode;
         switch (KeyID) {
-        case 38: // up
-        case 87: // w
-            camera.position = camera.position.add(dir.scale(this.zoomSpeed));
-            break;
-        case 39: // right
-        case 68: // d
-            var np = camera.position;
-            np.x -= dir.z * this.zoomSpeed;
-            np.z += dir.x * this.zoomSpeed;
-            camera.position = np;
-            break;
-        case 37: // left
-        case 65: // a
-            var np = camera.position;
-            np.x += dir.z * this.zoomSpeed;
-            np.z -= dir.x * this.zoomSpeed;
-            camera.position = np;
-            break;
-        case 40: // down
-        case 83: // s
-            camera.position = camera.position.subtract(dir.scale(this.zoomSpeed));
-            break;
+            case 38: //up
+            case 87: //w
+            case 39: //right
+            case 68: //d
+            case 37: //left
+            case 65: //a
+            case 40: //down
+            case 83: //s
+                break;
+            default:
+                return; //Not a key we're interested in
+        }
 
-        default:
+        if (action === "up") {
+            delete this.activeKeys[KeyID];
+            return;
+        } else if (this.activeKeys[KeyID] !== undefined) {
+            //Already animating this direction
             return;
         }
-        this.needUpdate = true;
-    }
-    this.stopEvent(e);
-};
 
-//-----------------------------------------------------
-//attach/detach of all controllers
-//-----------------------------------------------------
-XML3D.Xml3dSceneController.attachAllControllers = function() {
-
-    XML3D.debug.logInfo("Attaching all active controllers to xml3d elements.");
-
-    var xml3dList = Array.prototype.slice.call( document.getElementsByTagNameNS(XML3D.xml3dNS, 'xml3d') );
-    for(var node in xml3dList) {
-        XML3D.Xml3dSceneController.controllers[node].attach();
-    }
-};
-
-XML3D.Xml3dSceneController.detachAllControllers = function() {
-
-    XML3D.debug.logInfo("Detaching all active controllers from xml3d elements.");
-
-    var xml3dList = Array.prototype.slice.call( document.getElementsByTagNameNS(XML3D.xml3dNS, 'xml3d') );
-    for(var node in xml3dList) {
-        XML3D.Xml3dSceneController.controllers[node].detach();
-    }
-};
-
-XML3D.Xml3dSceneController.getController = function(xml3d) {
-
-    var xml3dList = Array.prototype.slice.call( document.getElementsByTagNameNS(XML3D.xml3dNS, 'xml3d') );
-    for(var node in xml3dList) {
-
-        var ctrl = XML3D.Xml3dSceneController.controllers[node];
-        if(xml3d == ctrl.xml3d)
-            return ctrl;
-    }
-
-    return null;
-};
-
-//-----------------------------------------------------
-//loading/unloading
-//-----------------------------------------------------
-
-(function() {
-
-    var onload = function() {
-
-        var xml3dList = Array.prototype.slice.call( document.querySelectorAll('xml3d') );
-
-        XML3D.Xml3dSceneController.controllers = new Array();
-        for(var i in xml3dList) {
-            XML3D.debug.logInfo("Attaching Controller to xml3d element.");
-            XML3D.Xml3dSceneController.controllers[i] = new XML3D.Xml3dSceneController(xml3dList[i]);
-        };
+        //This is a new key press so we need to start a camera animation interval for it
+        this.activeKeys[KeyID] = Date.now();
+        window.requestAnimationFrame(this.moveTick.bind(this, KeyID));
     };
-    var onunload = function() {
-        for(var i in XML3D.Xml3dSceneController.controllers)
-        {
-            XML3D.Xml3dSceneController.controllers[i].detach();
+
+    XML3D.StandardCamera.prototype.moveTick = function(keyID) {
+        if (this.activeKeys[keyID] === undefined) {
+            //This key was released, returning without requesting a new animation frame will stop movement in this direction
+            return;
         }
+
+        var elementDir = this.transformInterface.direction;
+        var np = this.transformInterface.position;
+
+        switch (keyID) {
+            case 38: // up
+            case 87: // w
+                break;
+            case 39: // right
+            case 68: // d
+                elementDir = elementDir.cross(new XML3D.Vec3(0, 1, 0));
+                break;
+            case 37: // left
+            case 65: // a
+                elementDir = elementDir.cross(new XML3D.Vec3(0, -1, 0));
+                break;
+            case 40: // down
+            case 83: // s
+                elementDir = elementDir.negate();
+                break;
+            default:
+                return;
+        }
+        var timeScale = (Date.now() - this.activeKeys[keyID]) / 16.67; //try to keep the same movement speed over time regardless of framerate
+        np = np.add(elementDir.scale(this.zoomSpeed * 0.02 * timeScale));
+        this.transformInterface.position = np;
+
+        this.activeKeys[keyID] = Date.now();
+        window.requestAnimationFrame(this.moveTick.bind(this, keyID));
     };
 
-    window.addEventListener('load', onload, false);
-    window.addEventListener('unload', onunload, false);
-    window.addEventListener('reload', onunload, false);
 
+    var TransformInterface = function(element, xml3d) {
+        this.element = element;
+        this.xml3d = xml3d;
+        this.transform = this.getTransformForElement(element);
+    };
+
+    TransformInterface.prototype.getTransformForElement = function(element) {
+        if (element.hasAttribute("transform")) {
+            //If the element already has a transform we can reuse that
+            return document.querySelector(element.getAttribute("transform"));
+        }
+        return this.createTransformForView(element);
+    };
+
+    var elementCount = 0;
+    TransformInterface.prototype.createTransformForView = function(element) {
+        var transform = document.createElement("transform");
+        var tid = "Generated_Camera_Transform_" + elementCount++;
+        transform.setAttribute("id", tid);
+        element.parentElement.appendChild(transform);
+        element.setAttribute("transform", "#"+tid);
+        return transform;
+    };
+
+    Object.defineProperty(TransformInterface.prototype, "orientation", {
+        get: function() {
+            return XML3D.Quat.fromAxisAngle(this.transform.rotation);
+        },
+
+        set: function(orientation) {
+            var aa = XML3D.AxisAngle.fromQuat(orientation);
+            this.transform.setAttribute("rotation", aa.toDOMString());
+        }
+    });
+
+    Object.defineProperty(TransformInterface.prototype, "position", {
+        get: function() {
+            return this.transform.translation;
+        },
+
+        set: function(position) {
+            this.transform.setAttribute("translation", position.toDOMString());
+        }
+    });
+
+    Object.defineProperty(TransformInterface.prototype, "direction", {
+        get: function() {
+            var dir = new XML3D.Vec3(0, 0, -1);
+            return dir.mul(this.orientation);
+        },
+
+        set: function(dir) {
+            throw("Direction cannot be set directly.");
+        }
+    });
+
+    Object.defineProperty(TransformInterface.prototype, "upVector", {
+        get: function() {
+            var up = new XML3D.Vec3(0, 1, 0);
+            return up.mul(this.orientation);
+        },
+
+        set: function(up) {
+            throw("Up vector cannot be set directly");
+        }
+    });
+
+    /**
+     *  This is always the VERTICAL field of view in radians
+     */
+    Object.defineProperty(TransformInterface.prototype, "fieldOfView", {
+        get: function() {
+            var fovh = this.element.querySelector("float[name=fovHorizontal]");
+            if (fovh) {
+                var h = fovh.value[0];
+                return 2 * Math.atan(Math.tan(h / 2.0) * this.xml3d.width / this.xml3d.height);
+            }
+            var fovv = this.element.querySelector("float[name=fovVertical]");
+            if (fovv) {
+                return fovv.value[0];
+            }
+            return (45 * Math.PI / 180); //Default FOV
+        },
+
+        set: function(fov) {
+            var fovh = this.element.querySelector("float[name=fovHorizontal]");
+            if (fovh) {
+                fovh.parentNode.removeChild(fovh);
+            }
+            var fovv = this.element.querySelector("float[name=fovVertical]");
+            if (!fovv) {
+                fovv = document.createElement("float");
+                fovv.setAttribute("name", "fovVertical");
+                this.element.appendChild(fovv);
+            }
+            fovv.textContent = fov;
+        }
+    });
+
+    TransformInterface.prototype.rotateAroundPoint = function(q0, p0) {
+        this.orientation = this.orientation.mul(q0).normalize();
+        var aa = XML3D.AxisAngle.fromQuat(q0);
+        var axis = this.inverseTransformOf(aa.axis);
+        var tmpQuat = XML3D.Quat.fromAxisAngle(axis, aa.angle);
+        this.position = this.position.subtract(p0).mul(tmpQuat).add(p0);
+    };
+
+    TransformInterface.prototype.lookAround = function(rotSide, rotUp, upVector) {
+        var check = rotUp.mul(this.orientation);
+
+        var tmp = new XML3D.Vec3(0,0,-1).mul(check);
+        var rot = rotSide.clone();
+        if (Math.abs(upVector.dot(tmp)) <= 0.95) {
+            rot = rot.mul(rotUp);
+        }
+
+        rot = rot.normalize().mul(this.orientation).normalize();
+        this.orientation = rot;
+    };
+
+    TransformInterface.prototype.rotate = function(q0) {
+        this.orientation = this.orientation.mul(q0).normalize();
+    };
+
+    TransformInterface.prototype.translate = function(t0) {
+        this.position = this.position.add(t0);
+    };
+
+    TransformInterface.prototype.inverseTransformOf = function(vec) {
+        return vec.mul(this.orientation);
+    };
+
+    TransformInterface.prototype.lookAt = function(point) {
+        var dir = point.sub(this.position).normalize();
+        var up = new XML3D.Vec3(0,1,0);
+        var orientation = this.orientation;
+        var basisX = new XML3D.Vec3(dir).cross(up);
+        if (!basisX.length()) {
+            basisX = new XML3D.Vec3(1,0,0).mul(orientation);
+        }
+        var basisY = basisX.clone().cross(dir);
+        var basisZ = new XML3D.Vec3(dir).negate();
+        this.orientation = XML3D.Quat.fromBasis(basisX, basisY, basisZ);
+    };
 })();
 
-/***********************************************************************/
+// Automatically creates a camera instance using the first view element on the page
+window.addEventListener("load", function() {
+    var xml3d = document.querySelector("xml3d");
+    var init = function() {
+        var view;
+        if (xml3d.hasAttribute("view")) {
+            view = document.querySelector(xml3d.getAttribute("view"));
+        } else {
+            view = document.querySelector("view");
+        }
+        if (view && XML3D.StandardCamera.Instance !== false)
+            XML3D.StandardCamera.Instance = new XML3D.StandardCamera(view, {mode: "fly", useKeys: true});
+    };
+    if (xml3d) {
+        if (xml3d.complete)
+            init();
+        else
+            xml3d.addEventListener("load", init);
+    }
+});
