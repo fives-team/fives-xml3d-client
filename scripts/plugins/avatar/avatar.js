@@ -46,12 +46,6 @@ FIVES.Plugins = FIVES.Plugins || {};
         });
     };
 
-    a._handleComponentUpdate = function(entity, componentName) {
-        if(componentName == "position" || componentName == "orientation") {
-            this._setCameraBehindAvatar(entity);
-        }
-    };
-
     a._setCameraBehindAvatar = function(entity) {
         if(entity.guid == FIVES.AvatarEntityGuid)  {
             FIVES.Resources.SceneManager.setCameraViewToEntity(entity);
