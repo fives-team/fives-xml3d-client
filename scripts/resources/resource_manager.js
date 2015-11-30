@@ -23,7 +23,7 @@ FIVES.Resources = FIVES.Resources || {};
 
     rm.loadExternalResource = function(fivesObject, onResourceLoadedCallback) {
         this._onNextDocumentLoadedCallback = onResourceLoadedCallback;
-        CARAMEL.Utility.RemoteXML3DLoader.loadXML3D(fivesObject, this._onLoadedDocument.bind(this));
+        FIVES.Resources.RemoteXML3DLoader.loadXML3D(fivesObject, this._onLoadedDocument.bind(this));
     };
 
     rm._onLoadedDocument = function(responseDocument, idSuffix) {
