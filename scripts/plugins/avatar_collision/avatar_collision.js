@@ -106,8 +106,7 @@ FIVES.Plugins = FIVES.Plugins || {};
     var getCollisionRayOrigin = function(entity, collisionDirection) {
         var boundingBox = entity.xml3dView.groupElement.getWorldBoundingBox();
         var center = boundingBox.center();
-        var view = $(_xml3dElement.activeView)[0];
-        var viewDirection = view.getDirection();
+        var viewDirection = FIVES.Resources.SceneManager.getCameraViewDirection();
         var rayOrigin;
         if(collisionDirection == "forward")
             rayOrigin = new XML3D.Vec3(center.x + viewDirection.x * 0.5,
