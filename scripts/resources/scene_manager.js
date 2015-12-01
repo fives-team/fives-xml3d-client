@@ -136,5 +136,10 @@ FIVES.Resources = FIVES.Resources || {};
         }
     };
 
+    scm.getCameraViewDirection = function() {
+        var viewMatrix = $(this.xml3dElement.view)[0].getViewMatrix();
+        return new XML3D.Vec3(viewMatrix.m13, viewMatrix.m23, viewMatrix.m33);
+    };
+
     FIVES.Resources.SceneManager = new SceneManager();
 }());
