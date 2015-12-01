@@ -132,13 +132,13 @@ FIVES.Resources = FIVES.Resources || {};
             viewTransform.rotation = entityTransform.rotation;
             viewTransform.translation = entityTransform.translation;
             var forward = this.getCameraViewDirection();
-            viewTransform.translation = viewTransform.translation.subtract(forward.scale(-8)).add(new XML3D.Vec3(0,1,0));
+            viewTransform.translation = viewTransform.translation.subtract(forward.scale(8)).add(new XML3D.Vec3(0,1,0));
         }
     };
 
     scm.getCameraViewDirection = function() {
         var viewMatrix = $(this.xml3dElement.view)[0].getViewMatrix();
-        return new XML3D.Vec3(viewMatrix.m13, viewMatrix.m23, viewMatrix.m33);
+        return new XML3D.Vec3(viewMatrix.m13, viewMatrix.m23, viewMatrix.m33).negate();
     };
 
     FIVES.Resources.SceneManager = new SceneManager();
