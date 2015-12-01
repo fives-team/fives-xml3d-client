@@ -26,7 +26,10 @@
                            background-size:100% 100%;
                            background-color: lightblue"
                            view = "#camera">
-                        <view id="camera" position = "0 0 0">
+                        <transform id="cameraTransform" translation = "0 0 0" rotation = "0 0 1 0"></transform>
+                        <group transform = "#cameraTransform">
+                            <view style="transform: rotate3d(0, 1, 0, -90deg);" id="camera"></view>
+                        </group>
                     </xml3d>
 
             <div class="modal fade" id="signin-modal" data-keyboard="false">
