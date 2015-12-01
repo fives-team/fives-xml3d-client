@@ -78,19 +78,22 @@ FIVES.Resources = FIVES.Resources || {};
     scm._createTranslationForEntityGroup = function(entity) {
         var position = entity.location.position;
         var xml3dPosition = new XML3D.Vec3(position.x, position.y, position.z);
-        return xml3dPosition.toDOMString();
+        return xml3dPosition;
     };
 
     scm._createRotationFromOrientation = function(entity) {
-        var orientation = entity.location.orientation;
-        var axisAngleRotation = XML3D.AxisAngle.fromQuat(orientation);
-        return axisAngleRotation.toDOMString();
+        var orientation = new XML3D.Quat(
+            entity.location.orientation.x,
+            entity.location.orientation.y,
+            entity.location.orientation.z,
+            entity.location.orientation.w);
+        return XML3D.AxisAngle.fromQuat(orientation);
     };
 
     scm._createScaleForEntityGroup = function(entity) {
         var scale = entity.mesh.scale;
         var xml3dScale = new XML3D.Vec3(scale.x, scale.y, scale.z);
-        return xml3dScale.toDOMString();
+        return xml3dScale;
     };
 
     /**
