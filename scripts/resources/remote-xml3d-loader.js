@@ -117,7 +117,7 @@ FIVES.Resources = FIVES.Resources || {};
         if(node.tagName === "mesh" || node.tagName === "model" || node.tagName === "img"  || node.tagName === "light" || node.tagName === "group" || node.tagName === "data")
         {
             this._adjustReferenceForAttribute(node, baseURL, "src");
-            this._adjustReferenceForAttribute(node, baseURL, "shader");
+            this._adjustReferenceForAttribute(node, baseURL, "material");
             this._adjustReferenceForAttribute(node, baseURL, "transform");
         }
 
