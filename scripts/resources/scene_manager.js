@@ -124,15 +124,15 @@ FIVES.Resources = FIVES.Resources || {};
      * @param entity Entity that shall be inspected in 3rd person mode
      */
     scm.setCameraViewToEntity = function(entity) {
-        var view = $(this.xml3dElement.view)[0];
+        var viewGroup = $(this.xml3dElement.view)[0].parentElement;
         var entityTransform = entity.xml3dView.transformElement;
         if(entityTransform)
         {
-            view.setDirection(entityTransform.rotation.rotateVec3(new XML3D.Vec3(1,0,0)));
-            var viewDirection = view.getDirection();
-            var cameraTranslation = entityTransform.translation.subtract(viewDirection.scale(6));
-            cameraTranslation.y += 1.2;
-            view.position.set(cameraTranslation);
+            var viewTransform = $(viewGroup.getAttribute("transform"))[0];
+            viewTransform.rotation = entityTransform.rotation;
+            viewTransform.translation = entityTransform.translation;
+            var forward = this.getCameraViewDirection();
+            viewTransform.translation = viewTransform.translation.subtract(forward.scale(-8)).add(new XML3D.Vec3(0,1,0));
         }
     };
 
