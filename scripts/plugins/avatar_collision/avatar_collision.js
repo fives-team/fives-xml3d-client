@@ -64,7 +64,7 @@ FIVES.Plugins = FIVES.Plugins || {};
 
     a._getHitpointWithGround = function(entity) {
         var rayOrigin = getCollisionRayOrigin(entity);
-        var ray = new XML3DRay(rayOrigin, new XML3D.Vec3(0,-1,0));
+        var ray = new XML3D.Ray(rayOrigin, new XML3D.Vec3(0,-1,0));
         var outHitpoint = new XML3D.Vec3(0,0,0);
         _xml3dElement.getElementByRay(ray, outHitpoint);
         return outHitpoint;
@@ -95,6 +95,7 @@ FIVES.Plugins = FIVES.Plugins || {};
         if(entity.motion.velocity.x < 0)
             entityDirection = entityDirection.negate();
 
+        var ray = new XML3D.Ray(rayOrigin, entityDirection);
         var ray = new XML3DRay(rayOrigin, entityDirection);
 
         var outHitpoint = new XML3D.Vec3(0,0,0);
