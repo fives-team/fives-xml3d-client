@@ -54,8 +54,7 @@ FIVES.Plugins = FIVES.Plugins || {};
         entity.xml3dView.groupElement = entityGroup;
         _xml3dElement.appendChild(entity.xml3dView.groupElement);
         $(entity.xml3dView.groupElement).append(meshGroup);
-        this.updateMesh(entity);
-
+        this.updateVisibility(entity);
     };
 
     r._createParentGroupForEntity = function(entity) {
