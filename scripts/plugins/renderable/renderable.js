@@ -74,6 +74,12 @@ FIVES.Plugins = FIVES.Plugins || {};
         //scm.removeEntity(entity);
         //scm.addMeshForEntity(entity).
         entity.xml3dView.groupElement.setAttribute("visible", entity["mesh"]["visible"]);
+    r.updateVisibility = function(entity)
+    {
+        if(entity["mesh"]["visible"])
+            $(entity.xml3dView.groupElement).show();
+        else
+            $(entity.xml3dView.groupElement).hide()
     };
 
     FIVES.Plugins.Renderable = new renderable();
