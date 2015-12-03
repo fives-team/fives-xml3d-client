@@ -20,7 +20,7 @@ FIVES.Plugins = FIVES.Plugins || {};
 
     var renderable = function () {
         FIVES.Events.AddEntityAddedHandler(this.addMeshForEntity.bind(this));
-        FIVES.Events.AddOnComponentUpdatedHandler(this.updateMesh.bind(this));
+        FIVES.Events.AddOnComponentUpdatedHandler(this._handleComponentUpdate.bind(this));
     };
 
     var r = renderable.prototype;
@@ -64,6 +64,12 @@ FIVES.Plugins = FIVES.Plugins || {};
         return entityGroup;
     };
 
+    r._handleComponentUpdate = function(entity, componentName, attributeName) {
+        if(componentName !== "mesh")
+            return;
+
+        this.updateMesh(entity,attributeName);
+    };
 
     r.updateMesh = function(entity, attributeName) {
 
