@@ -63,8 +63,9 @@ FIVES.Plugins = FIVES.Plugins || {};
     };
 
     a._getHitpointWithGround = function(entity) {
-        var rayOrigin = getCollisionRayOrigin(entity);
-        var ray = new XML3D.Ray(rayOrigin, new XML3D.Vec3(0,-1,0));
+        var ray = new XML3D.Ray();
+        ray.origin = getCollisionRayOrigin(entity);
+        ray.direction = new XML3D.Vec3(0,-1,0);
         var outHitpoint = new XML3D.Vec3(0,0,0);
         _xml3dElement.getElementByRay(ray, outHitpoint);
         return outHitpoint;
@@ -89,16 +90,18 @@ FIVES.Plugins = FIVES.Plugins || {};
     };
 
     a._getHitpointInMovementDirection = function(entity) {
-        var rayOrigin = getCollisionRayOrigin(entity, "forward");
+
         var entityDirection = (new XML3D.Vec3(1,0,0))
             .mul(XML3D.Quat.fromAxisAngle(entity.xml3dView.transformElement.rotation));
+
         if(entity.motion.velocity.x < 0)
             entityDirection = entityDirection.negate();
 
-        var ray = new XML3D.Ray(rayOrigin, entityDirection);
+        var ray = new XML3D.Ray();
+        ray.origin = getCollisionRayOrigin(entity, "forward");
+        ray.direction = entityDirection;
         var outHitpoint = new XML3D.Vec3(0,0,0);
         _xml3dElement.getElementByRay(ray, outHitpoint);
-
         return outHitpoint;
     };
 
@@ -112,10 +115,9 @@ FIVES.Plugins = FIVES.Plugins || {};
                 boundingBox.center().y,
                 center.z + viewDirection.z * 0.5);
         else
-            rayOrigin = new XML3D.Vec3(center.x + viewDirection.x * 0.5,
+            rayOrigin = new XML3D.Vec3(center.x + viewDirection.x * 1.5,
                 boundingBox.max.y,
-                center.z + viewDirection.z * 0.5);
-
+                center.z + viewDirection.z * 1.5);
         return rayOrigin;
     };
 
