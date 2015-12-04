@@ -20,7 +20,7 @@ FIVES.Plugins = FIVES.Plugins || {};
 
     var renderable = function () {
         FIVES.Events.AddEntityAddedHandler(this.addMeshForEntity.bind(this));
-        FIVES.Events.AddOnComponentUpdatedHandler(this.updateMesh.bind(this));
+        FIVES.Events.AddOnComponentUpdatedHandler(this._handleComponentUpdate.bind(this));
     };
 
     var r = renderable.prototype;
@@ -54,26 +54,42 @@ FIVES.Plugins = FIVES.Plugins || {};
         entity.xml3dView.groupElement = entityGroup;
         _xml3dElement.appendChild(entity.xml3dView.groupElement);
         $(entity.xml3dView.groupElement).append(meshGroup);
-        this.updateMesh(entity);
-
+        this.updateVisibility(entity);
     };
 
     r._createParentGroupForEntity = function(entity) {
-        var entityGroup = XML3D.createElement("group");
+        var entityGroup = document.createElement("group");
         entityGroup.setAttribute("id", "Entity-" + entity.guid);
         entityGroup.setAttribute("transform", "#transform-" + entity.guid );
         return entityGroup;
     };
 
-    r.updateMesh = function(entity) {
-        // FIXME: We do not support changes to mesh resource attribute. The correct approach would be to remove existing
-        // entity (group and transform elements) from the scene graph and re-create them with the new URI. However,
-        // removing the group element, which has a reference to the data element within this group, causes crashes in
-        // current implementation of xml3d.js (https://github.com/xml3d/xml3d.js/issues/50).
-        // Once this is fixed, we should use the following code instead:
-        //scm.removeEntity(entity);
-        //scm.addMeshForEntity(entity).
-        entity.xml3dView.groupElement.setAttribute("visible", entity["mesh"]["visible"]);
+    r._handleComponentUpdate = function(entity, componentName, attributeName) {
+        if(componentName !== "mesh")
+            return;
+
+        this.updateMesh(entity,attributeName);
+    };
+
+    r.updateMesh = function(entity, attributeName) {
+
+        if(attributeName === "uri")
+        {
+            scm.removeEntity(entity);
+            scm.addMeshForEntity(entity);
+        }
+        else if(attributeName === "visible")
+        {
+            this.updateVisibility(entity);
+        }
+    };
+
+    r.updateVisibility = function(entity)
+    {
+        if(entity["mesh"]["visible"])
+            $(entity.xml3dView.groupElement).show();
+        else
+            $(entity.xml3dView.groupElement).hide()
     };
 
     FIVES.Plugins.Renderable = new renderable();

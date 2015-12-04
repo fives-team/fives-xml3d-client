@@ -36,7 +36,7 @@ FIVES.Resources = FIVES.Resources || {};
     };
 
     scm._createMainDefinitions = function() {
-        _mainDefs = XML3D.createElement("defs");
+        _mainDefs = document.createElement("defs");
         _mainDefs.id = "SceneDefinitions";
         this.xml3dElement.appendChild(_mainDefs);
         this.SceneDefinitions = _mainDefs;
@@ -66,7 +66,7 @@ FIVES.Resources = FIVES.Resources || {};
     };
 
     scm._createTransformForEntityGroup = function(entity) {
-        var transformTag = XML3D.createElement("transform");
+        var transformTag = document.createElement("transform");
         transformTag.setAttribute("id", "transform-" + entity.guid) ;
         transformTag.translation = this._createTranslationForEntityGroup(entity);
         transformTag.rotation = this._createRotationFromOrientation(entity);
