@@ -58,7 +58,7 @@ FIVES.Plugins = FIVES.Plugins || {};
     };
 
     r._createParentGroupForEntity = function(entity) {
-        var entityGroup = XML3D.createElement("group");
+        var entityGroup = document.createElement("group");
         entityGroup.setAttribute("id", "Entity-" + entity.guid);
         entityGroup.setAttribute("transform", "#transform-" + entity.guid );
         return entityGroup;
